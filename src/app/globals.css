@@ -1,0 +1,144 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design tokens — premium palette: indigo→violet accent, porcelain canvas,
+   color-tinted (never pure black) shadow stack */
+:root {
+  --accent: #6366f1;
+  --accent-2: #8b5cf6;
+  --accent-hover: #4f46e5;
+  --accent-soft: rgba(99, 102, 241, 0.12);
+  --bg: #f5f6fb;
+  --panel: #ffffff;
+  --border: rgba(15, 23, 42, 0.08);
+  --border-strong: rgba(15, 23, 42, 0.14);
+  --text: #101426;
+  --muted: #667085;
+  --radius: 14px;
+  --shadow-sm: 0 1px 2px rgba(16, 20, 38, 0.05), 0 2px 8px rgba(79, 70, 229, 0.05);
+  --shadow-md: 0 4px 12px rgba(16, 20, 38, 0.07), 0 12px 32px rgba(79, 70, 229, 0.1);
+  --shadow-lg: 0 8px 24px rgba(16, 20, 38, 0.1), 0 24px 56px rgba(79, 70, 229, 0.14);
+}
+
+/* Aurora canvas — fixed soft color washes behind the whole app */
+body {
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(52rem 34rem at 12% -8%, rgba(99, 102, 241, 0.14), transparent 60%),
+    radial-gradient(46rem 32rem at 96% 4%, rgba(139, 92, 246, 0.12), transparent 55%),
+    radial-gradient(40rem 30rem at 55% 110%, rgba(56, 189, 248, 0.09), transparent 60%);
+  background-attachment: fixed;
+}
+
+/* Premium typography rhythm */
+h1, h2, h3 {
+  letter-spacing: -0.02em;
+}
+
+::selection {
+  background: rgba(99, 102, 241, 0.22);
+}
+
+/* Thin, quiet scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.35) transparent;
+}
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: rgba(100, 116, 139, 0.3); border-radius: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+@layer components {
+  .card {
+    @apply bg-white rounded-2xl border;
+    border-color: var(--border);
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow 0.25s ease, border-color 0.25s ease, transform 0.25s ease;
+  }
+  .card-hover:hover {
+    transform: translateY(-3px);
+    border-color: rgba(99, 102, 241, 0.35);
+    box-shadow: var(--shadow-lg);
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none;
+  }
+  .btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  .btn-primary {
+    @apply btn text-white;
+    background: linear-gradient(135deg, #4f46e5 0%, #6d28d9 60%, #8b5cf6 130%);
+    box-shadow: 0 1px 3px rgba(49, 46, 129, 0.35), 0 5px 16px rgba(99, 102, 241, 0.38);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: linear-gradient(135deg, #4338ca 0%, #7c3aed 60%, #9d71ff 130%);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(49, 46, 129, 0.4), 0 8px 24px rgba(109, 40, 217, 0.45);
+  }
+  .btn-primary:active:not(:disabled) {
+    transform: translateY(0);
+  }
+  .btn-ghost {
+    @apply btn bg-white border;
+    border-color: var(--border-strong);
+    color: var(--text);
+    box-shadow: var(--shadow-sm);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: #f8f9fd;
+    border-color: rgba(99, 102, 241, 0.4);
+    color: var(--accent-hover);
+  }
+  .btn-danger {
+    @apply btn text-red-600 bg-white border;
+    border-color: rgba(220, 38, 38, 0.25);
+  }
+  .btn-danger:hover:not(:disabled) {
+    background: #fef2f2;
+    border-color: rgba(220, 38, 38, 0.45);
+  }
+  .input {
+    @apply w-full rounded-xl border bg-[#fbfcfe] px-3 py-2 text-sm outline-none transition-all;
+    border-color: rgba(15, 23, 42, 0.18);
+    box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
+  }
+  .input::placeholder {
+    color: #9aa3b5;
+  }
+  .input:hover:not(:focus) {
+    border-color: rgba(99, 102, 241, 0.35);
+  }
+  .input:focus {
+    border-color: var(--accent);
+    background: #ffffff;
+    box-shadow: 0 0 0 4px var(--accent-soft);
+  }
+  .label {
+    @apply block text-xs font-medium uppercase tracking-wide mb-1.5;
+    color: var(--muted);
+  }
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium border;
+  }
+  .badge-green {
+    @apply badge bg-emerald-50 text-emerald-700;
+    border-color: rgba(16, 185, 129, 0.25);
+  }
+  .badge-amber {
+    @apply badge bg-amber-50 text-amber-700;
+    border-color: rgba(245, 158, 11, 0.3);
+  }
+  .badge-slate {
+    @apply badge bg-slate-100 text-slate-600;
+    border-color: rgba(100, 116, 139, 0.22);
+  }
+  .muted {
+    color: var(--muted);
+  }
+}

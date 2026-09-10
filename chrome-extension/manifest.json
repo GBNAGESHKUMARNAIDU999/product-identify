@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "InventoryLens Identifier",
+  "version": "1.0.0",
+  "description": "Right-click any product image on the web to identify it against your InventoryLens catalog.",
+  "permissions": ["contextMenus", "storage", "unlimitedStorage"],
+  "host_permissions": ["http://localhost:3000/*", "<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "InventoryLens",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

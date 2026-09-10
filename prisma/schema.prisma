@@ -1,0 +1,76 @@
+// InventoryLens data model.
+// Dev default: SQLite (zero-setup). For production, swap provider to
+// postgresql and migrate item_image_embeddings.embedding to pgvector.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Inventory {
+  id                String   @id @default(cuid())
+  name              String
+  sourceType        String // xlsx | docx | gsheet | gdrive
+  sourceUrlOrPath   String?
+  sourceFingerprint String // sha256 of raw source bytes; drives idempotent re-import
+  rawFileStorageKey String?
+  lastSyncedAt      DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  items             InventoryItem[]
+
+  @@unique([name, sourceFingerprint])
+}
+
+model InventoryItem {
+  id                   String   @id @default(cuid())
+  inventoryId          String
+  inventory            Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  rowIndex             Int
+  sku                  String?
+  name                 String?
+  category             String?
+  attributesJson       String // original columns, keys unchanged
+  imageStorageKey      String?
+  imageOriginalFilename String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  embeddings           ItemImageEmbedding[]
+
+  @@unique([inventoryId, rowIndex])
+}
+
+model ItemImageEmbedding {
+  id              String   @id @default(cuid())
+  inventoryItemId String
+  item            InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  // JSON array of floats (SQLite dev). On Postgres use vector(N) + pgvector index.
+  embedding       String
+  modelUsed       String
+  createdAt       DateTime @default(now())
+
+  @@index([inventoryItemId])
+}
+
+model IdentifyQuery {
+  id                     String   @id @default(cuid())
+  uploadedImageStorageKey String
+  topMatchItemId         String?
+  confidenceScore        Float
+  candidatesJson         String // top-N [{itemId, score}]
+  userConfirmedItemId    String?
+  createdAt              DateTime @default(now())
+}
+
+model ApiCredential {
+  id           String   @id @default(cuid())
+  provider     String   @unique // openai | google | anthropic
+  encryptedKey String // AES-256-GCM ciphertext, never plaintext
+  keyHint      String // e.g. "sk-...abcd" for UI display
+  meta         String? // JSON, e.g. {"mode":"api_key"|"oauth"} for google
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
