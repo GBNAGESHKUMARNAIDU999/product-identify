@@ -19,8 +19,18 @@ export function extractFolderId(url: string): string | null {
 function authHeaders(token: string, mode: "api_key" | "oauth"): Record<string, string> {
   return mode === "oauth" ? { Authorization: `Bearer ${token}` } : {};
 }
-function authQuery(token: string, mode: "api_key" | "oauth"): string {
-  return mode === "api_key" ? `?key=${encodeURIComponent(token)}` : "";
+
+/**
+ * Appends query params plus the auth param correctly for either mode. Never
+ * concatenate by hand: in oauth mode there is no `?key=` segment, so
+ * `...${authQuery()}&mimeType=` produces `/export&mimeType=…` — the params end
+ * up in the path and Google answers 404.
+ */
+function withQuery(base: string, params: Record<string, string>, token: string, mode: "api_key" | "oauth"): string {
+  const search = new URLSearchParams(params);
+  if (mode === "api_key") search.set("key", token);
+  const qs = search.toString();
+  return qs ? `${base}?${qs}` : base;
 }
 
 export interface GoogleFetchResult {
@@ -35,14 +45,14 @@ export async function fetchGoogleSheet(
   mode: "api_key" | "oauth"
 ): Promise<{ columns: string[]; rows: Record<string, string>[] }> {
   const metaRes = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}${authQuery(token, mode)}`,
+    withQuery(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}`, {}, token, mode),
     { headers: authHeaders(token, mode) }
   );
   if (!metaRes.ok) throw new Error(`Sheets metadata failed (${metaRes.status}). Check the credential and sharing settings.`);
   const meta = (await metaRes.json()) as { properties?: { title?: string }; sheets?: { properties?: { title?: string } }[] };
   const sheetTitle = meta.sheets?.[0]?.properties?.title ?? "";
   const valuesRes = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(sheetTitle)}${authQuery(token, mode)}`,
+    withQuery(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(sheetTitle)}`, {}, token, mode),
     { headers: authHeaders(token, mode) }
   );
   if (!valuesRes.ok) throw new Error(`Sheets values failed (${valuesRes.status}).`);
@@ -59,36 +69,44 @@ export async function fetchGoogleSheet(
 }
 
 /**
- * Exports a Google Sheet as xlsx bytes via the Drive export endpoint. This is
- * the only way to read images INSERTED into cells: the Sheets v4 values API
- * returns blank for them, while the xlsx export preserves them as anchored
- * drawings the Excel parser can map back to rows.
+ * Exports a Google Sheet as xlsx bytes. This is the only way to read images
+ * INSERTED into cells: the Sheets v4 values API returns blank for them, while
+ * the xlsx export preserves them as anchored drawings the Excel parser can map
+ * back to rows.
+ *
+ * Uses the per-tab Docs download endpoint (docs.google.com/…/export), not
+ * drive/v3 files/export: the latter caps whole-workbook exports
+ * ("exportSizeLimitExceeded" for multi-tab sheets) and cannot select a tab.
+ * Bearer auth is sent when present; link-shared public sheets export without
+ * any auth.
  */
 export async function exportSheetXlsx(
   sheetId: string,
   token: string,
   mode: "api_key" | "oauth"
 ): Promise<Buffer> {
-  const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${sheetId}/export${authQuery(token, mode)}&mimeType=${encodeURIComponent(
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )}`,
+  const metaRes = await fetch(
+    withQuery(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}`, {}, token, mode),
     { headers: authHeaders(token, mode) }
   );
+  if (!metaRes.ok) throw new Error(`Sheets metadata failed (${metaRes.status}). Check the credential and sharing settings.`);
+  const meta = (await metaRes.json()) as { sheets?: { properties?: { sheetId?: number } }[] };
+  const gid = meta.sheets?.[0]?.properties?.sheetId ?? 0;
+
+  const res = await fetch(
+    `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=xlsx&gid=${gid}`,
+    { headers: authHeaders(token, mode), redirect: "follow" }
+  );
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as {
-      error?: { message?: string; details?: { reason?: string; metadata?: { activationUrl?: string } }[] };
-    };
-    const reason = body.error?.details?.find((d) => d.reason)?.reason;
-    const activationUrl = body.error?.details?.find((d) => d.metadata?.activationUrl)?.metadata?.activationUrl;
-    if (res.status === 403 && (reason === "SERVICE_DISABLED" || activationUrl)) {
-      throw new Error(
-        `The Drive API is not enabled for this Google project, so images inserted in the sheet can't be read.${activationUrl ? ` Enable it here: ${activationUrl}` : ""}`
-      );
-    }
-    throw new Error(`Sheet export failed (HTTP ${res.status})${body.error?.message ? `: ${body.error.message}` : ""}.`);
+    throw new Error(`Sheet export failed (HTTP ${res.status}).`);
   }
-  return Buffer.from(await res.arrayBuffer());
+  const buf = Buffer.from(await res.arrayBuffer());
+  // Google answers auth/sharing failures on this endpoint with a 200 HTML
+  // page — reject it here so the xlsx parser never sees a non-zip payload.
+  if (buf.length < 4 || buf[0] !== 0x50 || buf[1] !== 0x4b) {
+    throw new Error("Sheet export returned a non-xlsx response. Check the sheet is shared with the credential (view access).");
+  }
+  return buf;
 }
 
 /** Lists an Excel file inside a Drive folder (first .xlsx) + direct image files. */export async function fetchDriveFolder(
@@ -96,9 +114,13 @@ export async function exportSheetXlsx(
   token: string,
   mode: "api_key" | "oauth"
 ): Promise<{ files: { id: string; name: string; mimeType: string }[] }> {
-  const q = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
   const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files${authQuery(token, mode)}&q=${q}&fields=files(id,name,mimeType)&pageSize=100`,
+    withQuery(
+      "https://www.googleapis.com/drive/v3/files",
+      { q: `'${folderId}' in parents and trashed = false`, fields: "files(id,name,mimeType)", pageSize: "100" },
+      token,
+      mode
+    ),
     { headers: authHeaders(token, mode) }
   );
   if (!res.ok) throw new Error(`Drive list failed (${res.status}). Check the credential and folder sharing.`);
@@ -112,7 +134,7 @@ export async function downloadDriveFile(
   mode: "api_key" | "oauth"
 ): Promise<GoogleFetchResult["buf"]> {
   const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${fileId}${authQuery(token, mode)}&alt=media`,
+    withQuery(`https://www.googleapis.com/drive/v3/files/${fileId}`, { alt: "media" }, token, mode),
     { headers: authHeaders(token, mode) }
   );
   if (!res.ok) throw new Error(`Drive download failed (${res.status}).`);
@@ -131,16 +153,10 @@ export async function parseDriveFolder(
   const images = files.filter((f) => f.mimeType.startsWith("image/"));
 
   if (sheet) {
-    // Export native Google Sheet to xlsx bytes via Drive export endpoint, then
-    // reuse the Excel parser unchanged (one code path for anchor mapping).
-    const res = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${sheet.id}/export${authQuery(token, mode)}&mimeType=${encodeURIComponent(
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-      )}`,
-      { headers: authHeaders(token, mode) }
-    );
-    if (!res.ok) throw new Error(`Drive export failed (${res.status}).`);
-    const parsed = parseXlsx(Buffer.from(await res.arrayBuffer()));
+    // Export native Google Sheet to xlsx bytes, then reuse the Excel parser
+    // unchanged (one code path for anchor mapping).
+    const buf = await exportSheetXlsx(sheet.id, token, mode);
+    const parsed = parseXlsx(buf);
     // loose image files in the folder are also collected
     for (const img of images) {
       parsed.images[img.name] = await downloadDriveFile(img.id, token, mode);
