@@ -24,7 +24,9 @@ async function ping() {
     const res = await fetch(`${server}/api/inventories`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
-    const total = (json.inventories ?? []).reduce((n, i) => n + (i.itemCount ?? 0), 0);
+    // The API returns a bare array; older shape was { inventories: [...] }.
+    const list = Array.isArray(json) ? json : (json.inventories ?? []);
+    const total = list.reduce((n, i) => n + (i.itemCount ?? 0), 0);
     state.innerHTML = `<span class="dot ok"></span> Connected — ${total} items in catalog`;
   } catch {
     state.innerHTML = `<span class="dot bad"></span> Server not reachable — start the app first`;
